@@ -1,0 +1,12 @@
+{
+  "name": "phaser-hidpi",
+  "version": "1.0.0",
+  "description": "A drop-in wrapper that fixes blurry text and graphics for Phaser 4 games",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

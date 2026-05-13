@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>TapZone</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #050508;
+      display: flex; justify-content: center; align-items: center;
+      overflow: hidden; touch-action: none;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script src="phaser.min.js"></script>
+<script src="phaser-device-pixel-renders.js"></script>
+<script>
+/* ─────────────────────────────────────────────────────────
+   DPR SETUP
+   `px(n)` converts a logical pixel quantity to physical pixels.
+   On a non-HiDPI display, px(n) returns n unchanged.
+───────────────────────────────────────────────────────── */
+const LOGICAL_W = Math.min(window.innerWidth, 480);
+const LOGICAL_H = window.innerHeight;
+
+const { game: gameConfig, px } = devicePixelRender({
+  width : LOGICAL_W,
+  height: LOGICAL_H,
+});
+
+/* ─────────────────────────────────────────────────────────
+   GAME CONSTANTS — all in physical pixels via px()
+───────────────────────────────────────────────────────── */
+const W = px(LOGICAL_W);     // physical canvas width
+const H = px(LOGICAL_H);     // physical canvas height
+
+const BASE_R   = px(42);     // tappable circle radius
+const RING_R0  = px(115);    // ring starts here
+const RING_DUR = 2600;       // ms — durations stay unwrapped
+
+const TIERS = [
+  { label: 'PERFECT', maxR: px(8),   pts: 150, col: 0x00ffee, txt: '#00ffee' },
+  { label: 'GREAT',   maxR: px(28),  pts: 75,  col: 0x44ff88, txt: '#44ff88' },
+  { label: 'GOOD',    maxR: px(55),  pts: 35,  col: 0xffdd00, txt: '#ffdd00' },
+  { label: 'OK',      maxR: Infinity, pts: 10, col: 0xff8844, txt: '#ff8844' },
+];
+
+const LIVES_MAX = 3;
+
+/* ─────────────────────────────────────────────────────────
+   MENU SCENE
+───────────────────────────────────────────────────────── */
+class MenuScene extends Phaser.Scene {
+  constructor() { super({ key: 'MenuScene' }); }
+
+  create() {
+    const g = this.add.graphics();
+    g.fillStyle(0x050508, 1);
+    g.fillRect(0, 0, W, H);
+
+    this._rings = [0x00ffee, 0xff3377, 0x44ff88].map((col, i) => ({
+      gfx: this.add.graphics(),
+      col,
+      phase: i * (Math.PI * 2 / 3),
+    }));
+
+    this.add.text(W / 2, H * 0.27, 'TAP', {
+      fontSize: px(72) + 'px', fontFamily: 'monospace',
+      color: '#00ffee', stroke: '#002233', strokeThickness: px(4),
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H * 0.27 + px(76), 'ZONE', {
+      fontSize: px(72) + 'px', fontFamily: 'monospace',
+      color: '#ff3377', stroke: '#440022', strokeThickness: px(4),
+    }).setOrigin(0.5);
+
+    this.add.text(W / 2, H * 0.57,
+      'Tap targets as the ring shrinks.\nCloser to centre = more points.', {
+        fontSize: px(15) + 'px', fontFamily: 'monospace',
+        color: '#8899bb', align: 'center', lineSpacing: px(8),
+      }).setOrigin(0.5);
+
+    const GUIDE_Y = H * 0.73;
+    TIERS.forEach((tier, i) => {
+      const x = W * (0.15 + i * 0.23);
+      this.add.text(x, GUIDE_Y, tier.label, {
+        fontSize: px(9) + 'px', fontFamily: 'monospace', color: tier.txt,
+      }).setOrigin(0.5);
+      this.add.text(x, GUIDE_Y + px(16), '+' + tier.pts, {
+        fontSize: px(9) + 'px', fontFamily: 'monospace', color: '#445566',
+      }).setOrigin(0.5);
+    });
+
+    const btn = this.add.text(W / 2, H * 0.88, '▶  TAP TO PLAY', {
+      fontSize: px(20) + 'px', fontFamily: 'monospace', color: '#ffffff',
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets: btn, alpha: 0.2, duration: 700,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+
+    this.input.on('pointerdown', () => this.scene.start('GameScene'));
+  }
+
+  update(time) {
+    const cx = W / 2;
+    const cy = H * 0.27 + px(38);
+    this._rings.forEach((r) => {
+      const a   = r.phase + time * 0.0008;
+      const rx  = cx + Math.cos(a) * px(78);
+      const ry  = cy + Math.sin(a) * px(28);
+      const rad = px(16) + Math.sin(time * 0.0025 + r.phase) * px(5);
+      r.gfx.clear();
+      r.gfx.lineStyle(px(1.5), r.col, 0.2);
+      r.gfx.strokeCircle(rx, ry, rad);
+    });
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   GAME SCENE
+───────────────────────────────────────────────────────── */
+class GameScene extends Phaser.Scene {
+  constructor() { super({ key: 'GameScene' }); }
+
+  create() {
+    this._score      = 0;
+    this._combo      = 0;
+    this._bestCombo  = 0;
+    this._lives      = LIVES_MAX;
+    this._targets    = [];
+    this._spawnT     = 0;
+    this._spawnInt   = 1700;
+    this._maxOnScreen = 2;
+    this._alive      = true;
+    this._diffTick   = 0;
+
+    const bg = this.add.graphics();
+    bg.fillStyle(0x050508, 1);
+    bg.fillRect(0, 0, W, H);
+
+    const dots = this.add.graphics();
+    dots.fillStyle(0x0d0d22, 1);
+    for (let x = px(20); x < W; x += px(38))
+      for (let y = px(20); y < H; y += px(38))
+        dots.fillCircle(x, y, px(1.5));
+
+    const HUD_H = px(78);
+    const hud = this.add.graphics().setDepth(10);
+    hud.fillStyle(0x08081a, 1);
+    hud.fillRect(0, 0, W, HUD_H);
+    hud.lineStyle(px(1), 0x111133, 1);
+    hud.lineBetween(0, HUD_H, W, HUD_H);
+
+    this._buildHUD();
+
+    this.input.on('pointerdown', this._onTap, this);
+  }
+
+  _buildHUD() {
+    const PAD = px(18);
+    const TOP = px(16);
+
+    this._scoreTxt = this.add.text(W / 2, TOP, '0', {
+      fontSize: px(40) + 'px', fontFamily: 'monospace',
+      color: '#ffffff', stroke: '#000000', strokeThickness: px(3),
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    this.add.text(W / 2, TOP + px(46), 'SCORE', {
+      fontSize: px(9) + 'px', fontFamily: 'monospace', color: '#223344',
+    }).setOrigin(0.5, 0).setDepth(11);
+
+    this._comboTxt = this.add.text(W - PAD, TOP + px(4), '×1', {
+      fontSize: px(20) + 'px', fontFamily: 'monospace',
+      color: '#ffdd00', stroke: '#221100', strokeThickness: px(2),
+    }).setOrigin(1, 0).setDepth(11).setAlpha(0);
+
+    this.add.text(W - PAD, TOP + px(30), 'COMBO', {
+      fontSize: px(9) + 'px', fontFamily: 'monospace', color: '#223344',
+    }).setOrigin(1, 0).setDepth(11);
+
+    this._livesGfx = this.add.graphics().setDepth(11);
+    this._drawLives();
+  }
+
+  _drawLives() {
+    this._livesGfx.clear();
+    const PAD = px(18), TOP = px(28), SZ = px(9), GAP = px(20);
+    for (let i = 0; i < LIVES_MAX; i++) {
+      const x   = PAD + i * GAP;
+      const col = i < this._lives ? 0xff3366 : 0x1a1a2e;
+      this._livesGfx.fillStyle(col, 1);
+      this._livesGfx.fillTriangle(x, TOP - SZ, x - SZ, TOP + px(1), x, TOP + SZ);
+      this._livesGfx.fillTriangle(x, TOP - SZ, x + SZ, TOP + px(1), x, TOP + SZ);
+    }
+  }
+
+  update(time, delta) {
+    if (!this._alive) return;
+
+    this._diffTick += delta;
+    if (this._diffTick >= 8000) {
+      this._diffTick    = 0;
+      this._spawnInt    = Math.max(this._spawnInt - 110, 850);
+      this._maxOnScreen = Math.min(this._maxOnScreen + 1, 4);
+    }
+
+    this._spawnT += delta;
+    if (this._spawnT >= this._spawnInt &&
+        this._targets.length < this._maxOnScreen) {
+      this._spawnT = 0;
+      this._spawnTarget(time);
+    }
+
+    for (let i = this._targets.length - 1; i >= 0; i--) {
+      const tgt = this._targets[i];
+      const pct = Math.min((time - tgt.born) / RING_DUR, 1);
+      tgt.ringR = RING_R0 * (1 - pct);
+
+      this._drawTarget(tgt, pct);
+
+      if (pct >= 1) {
+        this._miss(tgt);
+        this._targets.splice(i, 1);
+      }
+    }
+  }
+
+  _spawnTarget(time) {
+    const MARGIN = RING_R0 + px(12);
+    const HUD_H  = px(88);
+
+    let x, y, tries = 0;
+    do {
+      x = Phaser.Math.Between(MARGIN, W - MARGIN);
+      y = Phaser.Math.Between(HUD_H + MARGIN, H - MARGIN);
+      tries++;
+    } while (tries < 25 && this._targets.some(t =>
+      Phaser.Math.Distance.Between(t.x, t.y, x, y) < RING_R0 * 2.2));
+
+    const gfx = this.add.graphics().setDepth(5);
+    gfx.setScale(0);
+    this.tweens.add({
+      targets: gfx, scaleX: 1, scaleY: 1,
+      duration: 200, ease: 'Back.easeOut',
+    });
+
+    this._targets.push({ x, y, gfx, born: time, ringR: RING_R0 });
+  }
+
+  _drawTarget(tgt, pct) {
+    const g = tgt.gfx;
+    g.clear();
+
+    let col;
+    if      (pct < 0.30) col = 0x00ffee;
+    else if (pct < 0.55) col = 0x44ff88;
+    else if (pct < 0.78) col = 0xffdd00;
+    else                 col = 0xff4444;
+
+    g.lineStyle(px(2), col, 0.12);
+    g.strokeCircle(tgt.x, tgt.y, tgt.ringR + px(8));
+
+    g.lineStyle(px(3), col, 0.92);
+    g.strokeCircle(tgt.x, tgt.y, tgt.ringR);
+
+    g.fillStyle(0x0a0a18, 1);
+    g.fillCircle(tgt.x, tgt.y, BASE_R);
+
+    const pulse = 0.45 + 0.45 * Math.sin(Date.now() * 0.006);
+    g.lineStyle(px(2), col, pulse);
+    g.strokeCircle(tgt.x, tgt.y, BASE_R);
+
+    [{ r: px(8), a: 0.5 }, { r: px(28), a: 0.2 }, { r: px(42), a: 0.1 }].forEach(({ r, a }) => {
+      g.lineStyle(px(1), col, a);
+      g.strokeCircle(tgt.x, tgt.y, r);
+    });
+
+    g.lineStyle(px(1), col, 0.25);
+    g.lineBetween(tgt.x - px(16), tgt.y, tgt.x + px(16), tgt.y);
+    g.lineBetween(tgt.x, tgt.y - px(16), tgt.x, tgt.y + px(16));
+
+    if (pct > 0.82) {
+      const urgency = Math.sin(Date.now() * 0.03) * 0.5 + 0.5;
+      g.fillStyle(0xff2222, 0.07 * urgency);
+      g.fillCircle(tgt.x, tgt.y, BASE_R);
+    }
+  }
+
+  _onTap(ptr) {
+    if (!this._alive) return;
+
+    for (let i = this._targets.length - 1; i >= 0; i--) {
+      const tgt  = this._targets[i];
+      const dist = Phaser.Math.Distance.Between(ptr.x, ptr.y, tgt.x, tgt.y);
+
+      if (dist <= BASE_R) {
+        const tier = TIERS.find(t => tgt.ringR <= t.maxR);
+        this._hit(tgt, tier);
+        this._targets.splice(i, 1);
+        return;
+      }
+    }
+  }
+
+  _hit(tgt, tier) {
+    this._combo++;
+    if (this._combo > this._bestCombo) this._bestCombo = this._combo;
+
+    const mult   = this._combo;
+    const earned = tier.pts * mult;
+    this._score += earned;
+
+    this._scoreTxt.setText(this._score);
+    this.tweens.add({
+      targets: this._scoreTxt, scaleX: 1.22, scaleY: 1.22,
+      duration: 80, yoyo: true, ease: 'Back.easeOut',
+    });
+
+    this._comboTxt.setText('×' + mult).setAlpha(1);
+    const comboCol = mult >= 8 ? '#ff3366' : mult >= 5 ? '#ff9900' : mult >= 3 ? '#ffdd00' : '#44ff88';
+    this._comboTxt.setColor(comboCol);
+
+    this._floatText(tgt.x, tgt.y - BASE_R - px(12),
+      tier.label + (mult > 1 ? '  ×' + mult : ''),
+      tier.txt, tier.label === 'PERFECT' ? 26 : 19);
+    this._floatText(tgt.x, tgt.y + BASE_R + px(14), '+' + earned, '#ffffff', 15);
+
+    this._burst(tgt.x, tgt.y, tier.col);
+
+    tgt.gfx.destroy();
+  }
+
+  _miss(tgt) {
+    this._combo = 0;
+    this._comboTxt.setAlpha(0);
+
+    this._lives--;
+    this._drawLives();
+
+    this._floatText(tgt.x, tgt.y - px(10), 'MISS', '#ff4444', 22);
+
+    this.cameras.main.shake(160, 0.013);
+
+    const flash = this.add.graphics().setDepth(50);
+    flash.fillStyle(0xff0000, 0.12);
+    flash.fillRect(0, 0, W, H);
+    this.tweens.add({
+      targets: flash, alpha: 0, duration: 300,
+      onComplete: () => flash.destroy(),
+    });
+
+    tgt.gfx.destroy();
+
+    if (this._lives <= 0) this._gameOver();
+  }
+
+  _burst(cx, cy, col) {
+    const ring = this.add.graphics().setDepth(8);
+    let r = BASE_R, a = 0.9;
+    const expand = () => {
+      ring.clear(); r += px(6); a -= 0.13;
+      if (a <= 0) { ring.destroy(); return; }
+      ring.lineStyle(px(3), col, a);
+      ring.strokeCircle(cx, cy, r);
+      ring.fillStyle(col, a * 0.1);
+      ring.fillCircle(cx, cy, r * 0.45);
+      this.time.delayedCall(28, expand);
+    };
+    expand();
+
+    const RAYS = 8;
+    for (let i = 0; i < RAYS; i++) {
+      const angle = (i / RAYS) * Math.PI * 2;
+      const ray   = this.add.graphics().setDepth(8);
+      let dist = BASE_R, len = px(10), la = 0.75;
+      const extendRay = () => {
+        ray.clear(); dist += px(9); len += px(2); la -= 0.14;
+        if (la <= 0) { ray.destroy(); return; }
+        ray.lineStyle(px(2), col, la);
+        ray.lineBetween(
+          cx + Math.cos(angle) * dist,
+          cy + Math.sin(angle) * dist,
+          cx + Math.cos(angle) * (dist + len),
+          cy + Math.sin(angle) * (dist + len),
+        );
+        this.time.delayedCall(28, extendRay);
+      };
+      extendRay();
+    }
+  }
+
+  _floatText(x, y, msg, col, size) {
+    const t = this.add.text(x, y, msg, {
+      fontSize: px(size) + 'px', fontFamily: 'monospace',
+      color: col, stroke: '#000000', strokeThickness: px(3),
+    }).setOrigin(0.5).setDepth(20);
+
+    this.tweens.add({
+      targets: t, y: y - px(64), alpha: 0,
+      duration: 950, ease: 'Cubic.easeOut',
+      onComplete: () => t.destroy(),
+    });
+  }
+
+  _gameOver() {
+    this._alive = false;
+    this._targets.forEach(t => t.gfx.destroy());
+    this._targets = [];
+
+    this.cameras.main.flash(200, 255, 20, 40, false);
+
+    const ov = this.add.graphics().setDepth(25);
+    ov.fillStyle(0x000000, 0.78);
+    ov.fillRect(0, 0, W, H);
+
+    const panel = this.add.container(W / 2, H / 2).setDepth(26).setAlpha(0);
+
+    const addTxt = (text, y, size, col, stroke = '#000000') =>
+      panel.add(this.add.text(0, y, text, {
+        fontSize: px(size) + 'px', fontFamily: 'monospace',
+        color: col, stroke, strokeThickness: px(3),
+        align: 'center',
+      }).setOrigin(0.5));
+
+    addTxt('GAME OVER',     px(-115), 36, '#ff3366', '#330011');
+    addTxt('' + this._score, px(-42), 66, '#ffffff');
+    addTxt('FINAL SCORE',    px(28),  11, '#334455');
+
+    const bestComboCol = this._bestCombo >= 10 ? '#ff3366' :
+                         this._bestCombo >= 5  ? '#ffdd00' : '#44ff88';
+    addTxt('BEST COMBO  ×' + this._bestCombo, px(66), 15, bestComboCol);
+
+    const div = this.add.graphics();
+    div.lineStyle(px(1), 0x223344, 1);
+    div.lineBetween(px(-80), px(96), px(80), px(96));
+    panel.add(div);
+
+    const retry = this.add.text(0, px(128), '▶  PLAY AGAIN', {
+      fontSize: px(20) + 'px', fontFamily: 'monospace', color: '#00ffee',
+    }).setOrigin(0.5).setInteractive();
+    panel.add(retry);
+
+    addTxt('tap anywhere', px(164), 11, '#334455');
+
+    this.tweens.add({
+      targets: retry, alpha: 0.2, duration: 650,
+      yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+
+    this.tweens.add({
+      targets: panel, alpha: 1, scaleX: 1, scaleY: 1,
+      from: 0, duration: 300, ease: 'Back.easeOut',
+    });
+    panel.setScale(0.7);
+
+    this.time.delayedCall(420, () => {
+      this.input.once('pointerdown', () => this.scene.restart());
+    });
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   BOOT
+───────────────────────────────────────────────────────── */
+new Phaser.Game(Object.assign(gameConfig, {
+  type           : Phaser.AUTO,
+  backgroundColor: '#050508',
+  scene          : [MenuScene, GameScene],
+  parent         : document.body,
+  banner         : false,
+}));
+</script>
+</body>
+</html>
