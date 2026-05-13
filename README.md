@@ -6,6 +6,8 @@ A wrapper plugin that fixes blurry text in Phaser 4 games on mobile and high pix
 
 If your Phaser game looks fine on desktop but the text and graphics are blurry on a phone, tablet, or high-DPI monitor, this plugin solves it by rendering the canvas at the device's native pixel resolution.
 
+<img width="657" height="697" alt="image" src="https://github.com/user-attachments/assets/598aebcc-01f8-4e18-a42a-76fd26b1b4c1" />
+
 ## Install
 
 ### npm
