@@ -1,5 +1,8 @@
 # phaser-hidpi
 
+<img width="2172" height="724" alt="37d941e4-7de9-40e3-8f33-c72325bc9ef6" src="https://github.com/user-attachments/assets/5ed91542-2282-4c49-ab42-e3ebc0f0e62d" />
+
+
 A wrapper plugin that fixes blurry text in Phaser 4 games on mobile and high pixel density screens.
 
 If your Phaser game looks fine on desktop but the text and graphics are blurry on a phone, tablet, or high-DPI monitor, this plugin solves it by rendering the canvas at the device's native pixel resolution.
