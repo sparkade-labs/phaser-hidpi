@@ -1,12 +1,35 @@
 {
-  "name": "phaser-hidpi",
-  "version": "1.0.0",
-  "description": "A drop-in wrapper that fixes blurry text and graphics for Phaser 4 games",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "@sparkade-labs/phaser-hidpi",
+  "version": "1.0.1",
+  "description": "Crisp Phaser 4 rendering on HiDPI, Retina, and mobile screens.",
+  "main": "phaser-hidpi.js",
+  "files": [
+    "phaser-hidpi.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "phaser",
+    "phaser4",
+    "hidpi",
+    "retina",
+    "mobile",
+    "devicepixelratio",
+    "dpr",
+    "canvas",
+    "gamedev"
+  ],
+  "author": "Sparkade Labs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sparkade-labs/phaser-hidpi.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "bugs": {
+    "url": "https://github.com/sparkade-labs/phaser-hidpi/issues"
+  },
+  "homepage": "https://github.com/sparkade-labs/phaser-hidpi#readme",
+  "peerDependencies": {
+    "phaser": "^4.0.0"
+  }
 }
