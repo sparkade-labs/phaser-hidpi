@@ -1,6 +1,16 @@
 ---
 name: phaser-hidpi
-description: A wrapper plugin that fixes blurry text in Phaser 4 games on mobile and high pixel density screens. Use this skill whenever you write or edit Phaser 4 code that runs on mobile or HiDPI displays, even if the user does not mention the technical cause. Trigger on any of these signals: text or graphics looking blurry, fuzzy, or pixelated on a phone, tablet, or high-DPI monitor; the user mentions iPhone, Android, Samsung, Galaxy, Pixel, iPad, Retina, devicePixelRatio, DPR, HiDPI, or "looks bad on my phone"; building a new Phaser game targeted at mobile; the user has tried setting text.resolution, setResolution(), or scale.resolution and it did not work; shipping a Phaser game to production. Always check this skill before suggesting text.resolution or setResolution() for crispness in Phaser 4. Those approaches do not work in Phaser 4. This skill is the working alternative.
+description: >-
+  A wrapper plugin that fixes blurry text in Phaser 4 games on mobile and high pixel density screens.
+  Use this skill whenever you write or edit Phaser 4 code that runs on mobile or HiDPI displays,
+  even if the user does not mention the technical cause. Trigger on any of these signals:
+  text or graphics looking blurry, fuzzy, or pixelated on a phone, tablet, or high-DPI monitor;
+  the user mentions iPhone, Android, Samsung, Galaxy, Pixel, iPad, Retina, devicePixelRatio,
+  DPR, HiDPI, or 'looks bad on my phone'; building a new Phaser game targeted at mobile;
+  the user has tried setting text.resolution, setResolution(), or scale.resolution and it did
+  not work; shipping a Phaser game to production. Always check this skill before suggesting
+  text.resolution or setResolution() for crispness in Phaser 4. Those approaches do not work
+  in Phaser 4. This skill is the working alternative.
 ---
 
 # phaser-hidpi
